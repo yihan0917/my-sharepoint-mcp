@@ -1,0 +1,81 @@
+# SharePoint MCP Server
+
+> **DISCLAIMER**: This project is not affiliated with, endorsed by, or related to Microsoft Corporation. SharePoint and Microsoft Graph API are trademarks of Microsoft Corporation. This is an independent, community-driven project.
+
+SharePoint Model Context Protocol (MCP) server acts as a bridge that enables LLM applications (like Claude) to access content from your SharePoint site. With this project, you can use natural language to query documents, lists, and other content in your SharePoint site.
+
+## Features
+
+- **Browse Document Libraries**: View contents of SharePoint document libraries
+- **Access List Data**: Retrieve and manipulate SharePoint list data
+- **Retrieve Document Content**: Access content from specific documents
+- **SharePoint Search**: Search across your entire site
+- **Create List Items**: Add new items to SharePoint lists
+
+## Prerequisites
+
+- Python 3.10 or higher
+- Access to a SharePoint site
+- Microsoft Azure AD application registration (for authentication)
+
+## Installation
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/DEmodoriGatsuO/sharepoint-mcp.git
+cd sharepoint-mcp
+```
+
+2. Create and activate a virtual environment:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Set up environment variables:
+
+```bash
+cp .env.example .env
+# Edit the .env file with your authentication details
+```
+
+## Configuration
+
+1. Register an application in Azure AD and grant necessary permissions (see docs/auth_guide.md)
+2. Configure your authentication information and SharePoint site URL in the `.env` file
+
+## Usage
+
+### Run in Development Mode
+
+```bash
+mcp dev src/server.py
+```
+
+### Install in Claude Desktop
+
+```bash
+mcp install src/server.py --name "SharePoint Assistant"
+```
+
+### Run Directly
+
+```bash
+python src/server.py
+```
+
+## License
+
+This project is released under the MIT License. See the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you would like to change before making major modifications.
