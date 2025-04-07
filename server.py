@@ -12,58 +12,58 @@ from mcp.server.fastmcp import FastMCP
 from auth.sharepoint_auth import SharePointContext, get_auth_context
 from config.settings import APP_NAME
 
-# デバッグモードを強制的に有効化
+# Force debug mode to be enabled
 DEBUG = True
 
-# ログレベルの設定
+# Set logging level
 logging_level = logging.DEBUG if DEBUG else logging.INFO
 logging.basicConfig(level=logging_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("sharepoint_mcp")
 
-# ツール登録をインポート
+# Import tool registrations
 from tools.site_tools import register_site_tools
 
 @asynccontextmanager
 async def sharepoint_lifespan(server: FastMCP) -> AsyncIterator[SharePointContext]:
-    """SharePoint接続のライフサイクルを管理する。"""
-    logger.info("SharePoint接続を初期化中...")
+    """Manage SharePoint connection lifecycle."""
+    logger.info("Initializing SharePoint connection...")
     
     try:
-        # SharePoint認証コンテキストを取得
-        logger.debug("認証コンテキストの取得を試行中...")
+        # Get SharePoint authentication context
+        logger.debug("Attempting to get authentication context...")
         context = await get_auth_context()
-        logger.info(f"認証成功。トークンの有効期限: {context.token_expiry}")
+        logger.info(f"Authentication successful. Token expiry: {context.token_expiry}")
         
-        # コンテキストをアプリケーションで使用するためにyield
+        # Yield context for use in the application
         yield context
         
     except Exception as e:
-        logger.error(f"SharePoint認証中にエラーが発生しました: {e}")
+        logger.error(f"Error during SharePoint authentication: {e}")
         
-        # エラーコンテキストを作成
+        # Create error context
         error_context = SharePointContext(
             access_token="error",
-            token_expiry=datetime.now() + timedelta(seconds=10),  # 短い有効期限
+            token_expiry=datetime.now() + timedelta(seconds=10),  # Short expiry
             graph_url="https://graph.microsoft.com/v1.0"
         )
         
-        logger.warning("認証失敗のためエラーコンテキストを使用します")
+        logger.warning("Using error context due to authentication failure")
         yield error_context
         
     finally:
-        logger.info("SharePoint接続を終了中...")
+        logger.info("Ending SharePoint connection...")
 
-# MCPサーバーを作成
+# Create MCP server
 mcp = FastMCP(APP_NAME, lifespan=sharepoint_lifespan)
 
-# ツールを登録
+# Register tools
 register_site_tools(mcp)
 
-# メイン実行
+# Main execution
 if __name__ == "__main__":
     try:
-        logger.info(f"{APP_NAME}サーバーを起動中...")
+        logger.info(f"Starting {APP_NAME} server...")
         mcp.run()
     except Exception as e:
-        logger.error(f"MCPサーバーの起動中にエラーが発生しました: {e}")
+        logger.error(f"Error occurred during MCP server startup: {e}")
         raise

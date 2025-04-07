@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""アクセストークンの内容を確認するスクリプト"""
+"""Script to check the contents of an access token"""
 
 import os
 import sys
@@ -9,49 +9,49 @@ import msal
 from dotenv import load_dotenv
 
 def decode_jwt(token):
-    """JWTトークンをデコードして内容を表示する"""
+    """Decode JWT token and display contents"""
     try:
-        # トークンの部分を取得（ヘッダー.ペイロード.署名）
+        # Get token parts (header.payload.signature)
         parts = token.split('.')
         if len(parts) != 3:
-            print("❌ 無効なJWTトークン形式です")
+            print("❌ Invalid JWT token format")
             return None
             
-        # ペイロード部分をデコード（2番目の部分）
-        # パディングを追加
+        # Decode payload part (second part)
+        # Add padding
         payload = parts[1]
         payload += '=' * ((4 - len(payload) % 4) % 4)
         
-        # Base64でデコード
+        # Decode with Base64
         decoded = base64.b64decode(payload)
         claims = json.loads(decoded)
         
         return claims
     except Exception as e:
-        print(f"❌ トークンのデコード中にエラーが発生しました: {e}")
+        print(f"❌ Error occurred while decoding token: {e}")
         return None
 
 def get_and_analyze_token():
-    """トークンを取得して分析する"""
-    print("=== アクセストークン分析 ===")
+    """Get and analyze token"""
+    print("=== Access Token Analysis ===")
     
-    # 環境変数を読み込む
+    # Load environment variables
     load_dotenv()
     
     try:
-        # MSALクライアントアプリケーションの作成
+        # Create MSAL client application
         tenant_id = os.getenv("TENANT_ID")
         client_id = os.getenv("CLIENT_ID")
         client_secret = os.getenv("CLIENT_SECRET")
         
         if not all([tenant_id, client_id, client_secret]):
-            print("❌ 認証に必要な環境変数が設定されていません")
+            print("❌ Required environment variables for authentication are not set")
             return False
         
-        # トークンキャッシュの設定
+        # Set up token cache
         cache = msal.SerializableTokenCache()
         
-        # MSALクライアントアプリケーションの作成
+        # Create MSAL client application
         authority = f"https://login.microsoftonline.com/{tenant_id}"
         app = msal.ConfidentialClientApplication(
             client_id,
@@ -60,63 +60,63 @@ def get_and_analyze_token():
             token_cache=cache
         )
         
-        # トークンの取得
-        print("トークンの取得中...")
+        # Get token
+        print("Getting token...")
         scope = ["https://graph.microsoft.com/.default"]
         result = app.acquire_token_for_client(scopes=scope)
         
         if "access_token" not in result:
-            print(f"❌ トークンの取得に失敗しました: {result.get('error', '不明')}")
+            print(f"❌ Failed to get token: {result.get('error', 'unknown')}")
             return False
         
         token = result["access_token"]
-        print("✅ アクセストークンの取得に成功しました")
+        print("✅ Successfully obtained access token")
         
-        # トークンの分析
-        print("\n--- トークンの詳細分析 ---")
+        # Analyze token
+        print("\n--- Detailed Token Analysis ---")
         claims = decode_jwt(token)
         
         if not claims:
             return False
         
-        # 重要な情報を表示
-        print("\n重要なクレーム情報:")
-        print(f"発行者 (iss): {claims.get('iss', '不明')}")
-        print(f"対象者 (aud): {claims.get('aud', '不明')}")
-        print(f"アプリID (appid): {claims.get('appid', '不明')}")
+        # Display important information
+        print("\nImportant claim information:")
+        print(f"Issuer (iss): {claims.get('iss', 'Unknown')}")
+        print(f"Audience (aud): {claims.get('aud', 'Unknown')}")
+        print(f"App ID (appid): {claims.get('appid', 'Unknown')}")
         
-        # roles と scp の確認（これが問題の原因と関連）
+        # Check for roles and scp (which can be related to the problem)
         roles = claims.get('roles', [])
         scp = claims.get('scp', '')
         
-        print("\n権限情報:")
+        print("\nPermission information:")
         if roles:
-            print("✅ rolesクレームが存在します:")
+            print("✅ roles claim exists:")
             for role in roles:
                 print(f"  - {role}")
         else:
-            print("❌ rolesクレームが存在しません")
+            print("❌ roles claim does not exist")
         
         if scp:
-            print("✅ scpクレームが存在します:")
+            print("✅ scp claim exists:")
             print(f"  {scp}")
         else:
-            print("❌ scpクレームが存在しません")
+            print("❌ scp claim does not exist")
             
-        # エラーメッセージの原因に関連する検証
+        # Validation related to error message cause
         if not roles and not scp:
-            print("\n⚠️ 警告: トークンにrolesもscpも含まれていません")
-            print("   このことが「Either scp or roles claim need to be present in the token」エラーの原因です")
-            print("   Azure ADでアプリケーション権限を正しく設定し、管理者の同意を得てください")
+            print("\n⚠️ Warning: Token contains neither roles nor scp")
+            print("   This is the cause of the 'Either scp or roles claim need to be present in the token' error")
+            print("   Please set application permissions correctly in Azure AD and get admin consent")
         
-        # 全てのクレームを表示（オプション）
-        print("\n全てのクレーム:")
+        # Display all claims (optional)
+        print("\nAll claims:")
         print(json.dumps(claims, indent=2))
         
         return True
         
     except Exception as e:
-        print(f"❌ エラー: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         return False
