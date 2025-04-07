@@ -1,43 +1,133 @@
-"""Main implementation of the SharePoint MCP Server."""
+"""Microsoft Graph API client for SharePoint MCP server."""
 
-from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+import requests
+import logging
+from typing import Dict, Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+from auth.sharepoint_auth import SharePointContext
 
-from auth.sharepoint_auth import SharePointContext, get_auth_context
-from config.settings import APP_NAME
+# Set up logging
+logger = logging.getLogger("graph_client")
 
-# Import tool registrations
-from tools.site_tools import register_site_tools
-
-@asynccontextmanager
-async def sharepoint_lifespan(server: FastMCP) -> AsyncIterator[SharePointContext]:
-    """Manage the lifecycle of the SharePoint connection."""
-    print("Initializing SharePoint connection...")
+class GraphClient:
+    """Client for interacting with Microsoft Graph API."""
     
-    try:
-        # Get SharePoint authentication context
-        context = await get_auth_context()
-        yield context
-    except Exception as e:
-        print(f"Error during SharePoint authentication: {e}")
-        # Return a dummy context to avoid errors
-        dummy_context = SharePointContext(
-            access_token="error",
-            token_expiry=None,  # ここでNoneを使用
-            graph_url="https://graph.microsoft.com/v1.0"
-        )
-        yield dummy_context
-    finally:
-        print("Closing SharePoint connection...")
-
-# Create the MCP server
-mcp = FastMCP(APP_NAME, lifespan=sharepoint_lifespan)
-
-# Register tools
-register_site_tools(mcp)
-
-# Main execution
-if __name__ == "__main__":
-    mcp.run()
+    def __init__(self, context: SharePointContext):
+        """Initialize Graph client with SharePoint context.
+        
+        Args:
+            context: SharePoint authentication context
+        """
+        self.context = context
+        self.base_url = context.graph_url
+        logger.debug(f"GraphClient initialized with base URL: {self.base_url}")
+    
+    async def get(self, endpoint: str) -> Dict[str, Any]:
+        """Send GET request to Graph API.
+        
+        Args:
+            endpoint: API endpoint path (without base URL)
+            
+        Returns:
+            Response from the API as dictionary
+            
+        Raises:
+            Exception: If the request fails
+        """
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        logger.debug(f"Making GET request to: {url}")
+        
+        # ヘッダーはコンテキストから取得（認証トークンを含む）
+        headers = self.context.headers
+        
+        # リクエストを送信
+        response = requests.get(url, headers=headers)
+        
+        # レスポンスをログに記録
+        logger.debug(f"Response status code: {response.status_code}")
+        
+        if response.status_code != 200:
+            error_text = response.text
+            logger.error(f"Graph API error: {response.status_code} - {error_text}")
+            
+            # 認証関連のエラーを詳細に記録
+            if response.status_code in (401, 403):
+                logger.error("Authentication or authorization error detected")
+                if "scp or roles claim" in error_text:
+                    logger.error("Token does not have required claims (scp or roles)")
+                    logger.error("Please check application permissions in Azure AD")
+            
+            raise Exception(f"Graph API error: {response.status_code} - {error_text}")
+        
+        # 正常なレスポンスをJSON形式で返す
+        return response.json()
+    
+    async def post(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send POST request to Graph API.
+        
+        Args:
+            endpoint: API endpoint path (without base URL)
+            data: JSON data to send
+            
+        Returns:
+            Response from the API as dictionary
+            
+        Raises:
+            Exception: If the request fails
+        """
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        logger.debug(f"Making POST request to: {url}")
+        logger.debug(f"With data: {data}")
+        
+        # ヘッダーはコンテキストから取得（認証トークンを含む）
+        headers = self.context.headers
+        
+        # リクエストを送信
+        response = requests.post(url, headers=headers, json=data)
+        
+        # レスポンスをログに記録
+        logger.debug(f"Response status code: {response.status_code}")
+        
+        if response.status_code not in (200, 201):
+            error_text = response.text
+            logger.error(f"Graph API error: {response.status_code} - {error_text}")
+            
+            # 認証関連のエラーを詳細に記録
+            if response.status_code in (401, 403):
+                logger.error("Authentication or authorization error detected")
+                if "scp or roles claim" in error_text:
+                    logger.error("Token does not have required claims (scp or roles)")
+                    logger.error("Please check application permissions in Azure AD")
+            
+            raise Exception(f"Graph API error: {response.status_code} - {error_text}")
+        
+        # 正常なレスポンスをJSON形式で返す
+        return response.json()
+        
+    async def get_site_info(self, domain: str, site_name: str) -> Dict[str, Any]:
+        """Get SharePoint site information.
+        
+        Args:
+            domain: SharePoint domain
+            site_name: Name of the site
+            
+        Returns:
+            Site information
+        """
+        endpoint = f"sites/{domain}:/sites/{site_name}"
+        logger.info(f"Getting site info for domain: {domain}, site: {site_name}")
+        return await self.get(endpoint)
+    
+    async def list_document_libraries(self, domain: str, site_name: str) -> Dict[str, Any]:
+        """List all document libraries in the site.
+        
+        Args:
+            domain: SharePoint domain
+            site_name: Name of the site
+            
+        Returns:
+            List of document libraries
+        """
+        endpoint = f"sites/{domain}:/sites/{site_name}:/drives"
+        logger.info(f"Listing document libraries for domain: {domain}, site: {site_name}")
+        return await self.get(endpoint)
