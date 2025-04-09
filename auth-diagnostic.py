@@ -4,6 +4,7 @@
 import os
 import sys
 import json
+import uuid
 import requests
 from dotenv import load_dotenv
 
@@ -146,6 +147,93 @@ def run_auth_diagnostic():
             print(f"✅ Successfully listed {len(drives)} document libraries")
             for drive in drives:
                 print(f"  - {drive.get('name', 'Unknown')}")
+        
+        # Test write permissions
+        print("\n--- Testing Write Permissions ---")
+        try:
+            # Try to create a test list
+            test_list_name = f"TestList_{uuid.uuid4().hex[:8]}"
+            
+            create_list_url = f"https://graph.microsoft.com/v1.0/sites/{site_info['id']}/lists"
+            create_list_data = {
+                "displayName": test_list_name,
+                "list": {
+                    "template": "genericList"
+                },
+                "description": "Test list created by diagnostic tool"
+            }
+            
+            print(f"Attempting to create test list: {test_list_name}")
+            create_response = requests.post(create_list_url, headers=headers, json=create_list_data)
+            
+            if create_response.status_code in (201, 200):
+                print("✅ Successfully created a test list - write permissions confirmed")
+                
+                # Clean up - delete test list
+                list_id = create_response.json().get("id")
+                delete_url = f"https://graph.microsoft.com/v1.0/sites/{site_info['id']}/lists/{list_id}"
+                delete_response = requests.delete(delete_url, headers=headers)
+                
+                if delete_response.status_code in (204, 200):
+                    print("✅ Test list deleted successfully")
+                else:
+                    print(f"⚠️ Warning: Could not delete test list: {delete_response.status_code}")
+            else:
+                print(f"❌ Failed to create test list: {create_response.status_code}")
+                print(f"Response: {create_response.text}")
+                print("   You may not have sufficient write permissions")
+                print("   Check that your application has Sites.ReadWrite.All permission")
+                print("   For creating sites, you also need Sites.Manage.All permission")
+        except Exception as e:
+            print(f"❌ Error during write permission test: {str(e)}")
+        
+        # Check application permissions
+        print("\n--- Checking Application Permissions ---")
+        try:
+            # Decode token to check permissions
+            token = result['access_token']
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                # Add padding
+                payload = token_parts[1]
+                payload += '=' * ((4 - len(payload) % 4) % 4)
+                
+                # Decode
+                import base64
+                decoded = base64.b64decode(payload)
+                claims = json.loads(decoded)
+                
+                # Check roles
+                roles = claims.get('roles', [])
+                
+                if roles:
+                    print("Found the following roles in token:")
+                    for role in roles:
+                        print(f"  - {role}")
+                        
+                    # Check for specific permissions
+                    required_permissions = [
+                        "Sites.Read.All",
+                        "Sites.ReadWrite.All",
+                        "Files.ReadWrite.All",
+                        "Sites.Manage.All"
+                    ]
+                    
+                    missing_permissions = [p for p in required_permissions if not any(p in r for r in roles)]
+                    
+                    if missing_permissions:
+                        print("\n⚠️ Warning: The following permissions are recommended but not found:")
+                        for p in missing_permissions:
+                            print(f"  - {p}")
+                        print("   Some operations may fail without these permissions")
+                    else:
+                        print("\n✅ All required permissions are present in the token")
+                else:
+                    print("❌ No roles found in token - check application permissions in Azure AD")
+            else:
+                print("⚠️ Could not decode token to check permissions")
+        except Exception as e:
+            print(f"⚠️ Error checking permissions: {str(e)}")
         
     except Exception as e:
         print(f"❌ Error: Exception during diagnostic: {str(e)}")

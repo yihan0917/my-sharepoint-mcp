@@ -31,12 +31,16 @@ For the Microsoft Graph API, add these permissions:
 
 1. Navigate to **API permissions** → **Add a permission** → **Microsoft Graph** → **Application permissions**
 2. Add the following permissions:
+   - `Sites.Read.All` - Read files in all site collections
+   - `Sites.ReadWrite.All` - Read and write items in all site collections
+   - `Sites.Manage.All` - Create new sites and manage site collections
    - `Files.Read.All` - Read files in all site collections
-   - `Sites.Read.All` - Read items in all site collections
-   - `Sites.ReadWrite.All` - Read and write items in all site collections (if you need write access)
+   - `Files.ReadWrite.All` - Read and write files in all site collections
    - `User.Read.All` - Read all users' profiles
 3. Click **Add permissions**
 4. Click **Grant admin consent for [Your Organization]**
+
+> **NOTE**: The `Sites.Manage.All` permission is required for creating sites. If you don't need this functionality, you can omit this permission.
 
 ## Step 5: Update Your Configuration
 
@@ -90,6 +94,25 @@ For more secure authentication in production environments, use certificate-based
    )
    ```
 
+## Permission Explanations
+
+Here's a breakdown of what each permission allows:
+
+- **Sites.Read.All**: Allows reading properties and items of all SharePoint sites
+- **Sites.ReadWrite.All**: Allows reading and writing properties and items of all SharePoint sites
+- **Sites.Manage.All**: Allows full control of all site collections (required for site creation)
+- **Files.Read.All**: Allows reading files in all site collections
+- **Files.ReadWrite.All**: Allows reading, creating, updating and deleting files in all site collections
+- **User.Read.All**: Allows reading user profiles (useful for people-related fields)
+
+## Verifying Permissions
+
+To verify that your application has the correct permissions:
+
+1. Run the `auth-diagnostic.py` script included in this project
+2. Look for the "Checking Application Permissions" section in the output
+3. Verify that all required permissions are listed
+
 ## Troubleshooting
 
 If you encounter authorization errors:
@@ -99,3 +122,10 @@ If you encounter authorization errors:
 3. Ensure your client secret hasn't expired
 4. Verify that your SharePoint site URL is correct and accessible to the account
 5. For specific Microsoft Graph API errors, consult the [Microsoft Graph documentation](https://docs.microsoft.com/en-us/graph/errors)
+
+### Common Permission-Related Errors
+
+- **Access denied due to insufficient privileges**: Your application lacks the required permissions. Ensure you've granted all required permissions and admin consent has been provided.
+- **Either scp or roles claim need to be present in the token**: Your application is not correctly configured for application permissions. Check that admin consent was provided.
+- **Access to the specified resource is forbidden**: The application has authentication but lacks authorization for the specific resource. Check site-specific permissions.
+- **Resource not found**: The SharePoint site or resource doesn't exist or your application doesn't have permission to see it.

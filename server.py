@@ -10,10 +10,7 @@ from datetime import datetime, timedelta
 from mcp.server.fastmcp import FastMCP
 
 from auth.sharepoint_auth import SharePointContext, get_auth_context
-from config.settings import APP_NAME
-
-# Force debug mode to be enabled
-DEBUG = True
+from config.settings import APP_NAME, DEBUG
 
 # Set logging level
 logging_level = logging.DEBUG if DEBUG else logging.INFO
@@ -53,17 +50,25 @@ async def sharepoint_lifespan(server: FastMCP) -> AsyncIterator[SharePointContex
     finally:
         logger.info("Ending SharePoint connection...")
 
-# Create MCP server
+# Create MCP server at module level so CLI can find it
 mcp = FastMCP(APP_NAME, lifespan=sharepoint_lifespan)
 
 # Register tools
 register_site_tools(mcp)
 
-# Main execution
-if __name__ == "__main__":
+def main():
+    """Main entry point for the SharePoint MCP server."""
     try:
         logger.info(f"Starting {APP_NAME} server...")
         mcp.run()
     except Exception as e:
         logger.error(f"Error occurred during MCP server startup: {e}")
         raise
+
+# Main execution
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Fatal error in SharePoint MCP server: {e}")
+        sys.exit(1)
