@@ -11,8 +11,7 @@ from config.settings import SHAREPOINT_CONFIG
 def register_site_resources(mcp: FastMCP):
     """Register SharePoint site resources with the MCP server."""
     
-    # MCP 'ctx' パラメータをURIパラメータに合わせるための修正
-    # 方法1: リソースハンドラの外で関数を定義
+    # Define the resource handler function outside the MCP resource decorator
     async def site_info_handler(ctx: Context) -> str:
         """Get basic information about the SharePoint site."""
         await refresh_token_if_needed(ctx.request_context.lifespan_context)
@@ -49,7 +48,7 @@ def register_site_resources(mcp: FastMCP):
         except Exception as e:
             return f"Error accessing SharePoint: {str(e)}"
     
-    # 方法1: リソースURIをパラメータなしで登録し、外部に定義した関数を使用
+    # Method 1: Register the resource URI without parameters and use the externally defined function
     mcp.resource("sharepoint://site-info")(site_info_handler)
     
     # 方法2: (別の方法) パラメータを持つURIとして登録

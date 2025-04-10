@@ -114,7 +114,7 @@ mcp install server.py --name "SharePoint Assistant"
 ### Run Directly
 
 ```bash
-python src/server.py
+python server.py
 ```
 
 ## Advanced Usage
