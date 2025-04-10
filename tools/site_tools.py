@@ -231,6 +231,70 @@ def register_site_tools(mcp: FastMCP):
             return f"Error creating intelligent list: {str(e)}"
     
     @mcp.tool()
+    async def create_list_item(ctx: Context, site_id: str, list_id: str, fields: Dict[str, Any]) -> str:
+        """Create a new item in a SharePoint list.
+        
+        Args:
+            site_id: ID of the site
+            list_id: ID of the list
+            fields: Dictionary of field names and values
+        
+        Returns:
+            Created list item information
+        """
+        logger.info(f"Tool called: create_list_item in list: {list_id}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # Create the list item
+            item_info = await graph_client.create_list_item(site_id, list_id, fields)
+            
+            logger.info(f"Successfully created list item in list: {list_id}")
+            return json.dumps(item_info, indent=2)
+        except Exception as e:
+            logger.error(f"Error in create_list_item: {str(e)}")
+            return f"Error creating list item: {str(e)}"
+    
+    @mcp.tool()
+    async def update_list_item(ctx: Context, site_id: str, list_id: str, 
+                             item_id: str, fields: Dict[str, Any]) -> str:
+        """Update an existing item in a SharePoint list.
+        
+        Args:
+            site_id: ID of the site
+            list_id: ID of the list
+            item_id: ID of the list item
+            fields: Dictionary of field names and values to update
+        
+        Returns:
+            Updated list item information
+        """
+        logger.info(f"Tool called: update_list_item for item: {item_id} in list: {list_id}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # Update the list item
+            item_info = await graph_client.update_list_item(site_id, list_id, item_id, fields)
+            
+            logger.info(f"Successfully updated list item {item_id} in list: {list_id}")
+            return json.dumps(item_info, indent=2)
+        except Exception as e:
+            logger.error(f"Error in update_list_item: {str(e)}")
+            return f"Error updating list item: {str(e)}"
+    
+    @mcp.tool()
     async def create_advanced_document_library(ctx: Context, site_id: str, display_name: str, 
                                             doc_type: str = "general") -> str:
         """Create a document library with advanced metadata settings.
@@ -258,6 +322,44 @@ def register_site_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error in create_advanced_document_library: {str(e)}")
             return f"Error creating advanced document library: {str(e)}"
+    
+    @mcp.tool()
+    async def upload_document(ctx: Context, site_id: str, drive_id: str, folder_path: str, 
+                          file_name: str, file_content: bytes,
+                          content_type: str = None) -> str:
+        """Upload a document to a SharePoint document library.
+        
+        Args:
+            site_id: ID of the site
+            drive_id: ID of the document library
+            folder_path: Path to the folder (e.g. "General" or "Documents/Folder1")
+            file_name: Name of the file to create
+            file_content: Content of the file as bytes
+            content_type: MIME type of the file
+            
+        Returns:
+            Created document information
+        """
+        logger.info(f"Tool called: upload_document with name: {file_name}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # Upload the document
+            doc_info = await graph_client.upload_document(
+                site_id, drive_id, folder_path, file_name, file_content, content_type
+            )
+            
+            logger.info(f"Successfully uploaded document: {file_name}")
+            return json.dumps(doc_info, indent=2)
+        except Exception as e:
+            logger.error(f"Error in upload_document: {str(e)}")
+            return f"Error uploading document: {str(e)}"
     
     @mcp.tool()
     async def create_modern_page(ctx: Context, site_id: str, name: str, 
@@ -315,6 +417,41 @@ def register_site_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error in create_modern_page: {str(e)}")
             return f"Error creating modern page: {str(e)}"
+    
+    @mcp.tool()
+    async def create_news_post(ctx: Context, site_id: str, title: str, 
+                           description: str = "", content: str = "") -> str:
+        """Create a news post in a SharePoint site.
+        
+        Args:
+            site_id: ID of the site
+            title: Title of the news post
+            description: Brief description of the news post
+            content: HTML or Markdown content of the news post
+            
+        Returns:
+            Created news post information
+        """
+        logger.info(f"Tool called: create_news_post with title: {title}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # Create the news post
+            news_info = await graph_client.create_news_post(
+                site_id, title, description, content, promote=True
+            )
+            
+            logger.info(f"Successfully created news post: {title}")
+            return json.dumps(news_info, indent=2)
+        except Exception as e:
+            logger.error(f"Error in create_news_post: {str(e)}")
+            return f"Error creating news post: {str(e)}"
     
     @mcp.tool()
     async def get_document_content(ctx: Context, site_id: str, drive_id: str, 

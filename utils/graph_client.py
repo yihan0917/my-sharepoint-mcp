@@ -2,11 +2,14 @@
 
 import requests
 import logging
-from typing import Dict, Any, Optional, List
+import json
+import base64
+from typing import Dict, Any, Optional, List, Union, BinaryIO
 
 from auth.sharepoint_auth import SharePointContext
 
 # Set up logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("graph_client")
 
 class GraphClient:
@@ -171,6 +174,46 @@ class GraphClient:
         
         # Return successful status
         return {"status": "success"}
+    
+    async def upload_file(self, endpoint: str, file_content: Union[bytes, BinaryIO], content_type: str = None) -> Dict[str, Any]:
+        """Upload file content to Graph API.
+        
+        Args:
+            endpoint: API endpoint path (without base URL)
+            file_content: File content as bytes or file-like object
+            content_type: MIME type of the file
+            
+        Returns:
+            Response from the API as dictionary
+            
+        Raises:
+            Exception: If the request fails
+        """
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        logger.debug(f"Uploading file to: {url}")
+        
+        # Get headers from context (including auth token)
+        headers = self.context.headers.copy()
+        
+        # Set content type if provided
+        if content_type:
+            headers['Content-Type'] = content_type
+        
+        # Send request
+        response = requests.put(url, headers=headers, data=file_content)
+        
+        # Log response
+        logger.debug(f"Response status code: {response.status_code}")
+        
+        if response.status_code not in (200, 201, 204):
+            error_text = response.text
+            logger.error(f"Graph API error: {response.status_code} - {error_text}")
+            raise Exception(f"Graph API error: {response.status_code} - {error_text}")
+        
+        # Return successful response as JSON if available
+        if response.status_code == 204:
+            return {"status": "success"}
+        return response.json()
         
     async def get_site_info(self, domain: str, site_name: str) -> Dict[str, Any]:
         """Get SharePoint site information.
@@ -243,6 +286,56 @@ class GraphClient:
         }
         logger.info(f"Creating new list with name: {display_name} in site: {site_id}")
         return await self.post(endpoint, data)
+    
+    async def create_list_item(self, site_id: str, list_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new item in a SharePoint list.
+        
+        Args:
+            site_id: ID of the site
+            list_id: ID of the list
+            fields: Dictionary of field names and values
+        
+        Returns:
+            Created list item information
+        """
+        endpoint = f"sites/{site_id}/lists/{list_id}/items"
+        data = {
+            "fields": fields
+        }
+        logger.info(f"Creating new list item in list: {list_id}")
+        return await self.post(endpoint, data)
+    
+    async def update_list_item(self, site_id: str, list_id: str, item_id: str, 
+                            fields: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing item in a SharePoint list.
+        
+        Args:
+            site_id: ID of the site
+            list_id: ID of the list
+            item_id: ID of the list item
+            fields: Dictionary of field names and values to update
+        
+        Returns:
+            Updated list item information
+        """
+        endpoint = f"sites/{site_id}/lists/{list_id}/items/{item_id}/fields"
+        logger.info(f"Updating list item {item_id} in list: {list_id}")
+        return await self.patch(endpoint, fields)
+    
+    async def delete_list_item(self, site_id: str, list_id: str, item_id: str) -> Dict[str, Any]:
+        """Delete an item from a SharePoint list.
+        
+        Args:
+            site_id: ID of the site
+            list_id: ID of the list
+            item_id: ID of the list item
+        
+        Returns:
+            Status information
+        """
+        endpoint = f"sites/{site_id}/lists/{list_id}/items/{item_id}"
+        logger.info(f"Deleting list item {item_id} from list: {list_id}")
+        return await self.delete(endpoint)
     
     async def add_column_to_list(self, site_id: str, list_id: str, column_def: Dict[str, Any]) -> Dict[str, Any]:
         """Add a column to a SharePoint list.
@@ -336,6 +429,46 @@ class GraphClient:
         
         logger.info(f"Creating modern page with name: {name}, layout: {layout}")
         return await self.post(endpoint, data)
+    
+    async def create_news_post(self, site_id: str, title: str, description: str = "", 
+                           content: str = "", promote: bool = True) -> Dict[str, Any]:
+        """Create a news post in a SharePoint site.
+        
+        Args:
+            site_id: ID of the site
+            title: Title of the news post
+            description: Brief description of the news post
+            content: HTML content of the news post
+            promote: Whether to promote the news post
+        
+        Returns:
+            Created news post information
+        """
+        # First create a modern page
+        name = f"news-{title.lower().replace(' ', '-')}"
+        page_info = await self.create_modern_page(site_id, name, title, "Article")
+        page_id = page_info.get("id")
+        
+        # Update page with content
+        await self.update_page(site_id, page_id, title, content)
+        
+        # Publish the page
+        published_page = await self.publish_page(site_id, page_id)
+        
+        # Set as news post
+        endpoint = f"sites/{site_id}/pages/{page_id}/setAsNewsPost"
+        data = {
+            "promotionKind": "microsoftNewsService" if promote else "none"
+        }
+        logger.info(f"Setting page {page_id} as news post")
+        await self.post(endpoint, data)
+        
+        return {
+            "page_info": published_page,
+            "title": title,
+            "description": description,
+            "isNewsPost": True
+        }
     
     async def add_section_to_page(self, site_id: str, page_id: str, 
                                section_type: str = "OneColumn") -> Dict[str, Any]:
@@ -462,6 +595,42 @@ class GraphClient:
             raise Exception(f"Graph API error: {response.status_code} - {error_text}")
         
         return response.content
+    
+    async def upload_document(self, site_id: str, drive_id: str, folder_path: str, 
+                          file_name: str, file_content: bytes, 
+                          content_type: str = None) -> Dict[str, Any]:
+        """Upload a document to a SharePoint document library.
+        
+        Args:
+            site_id: ID of the site
+            drive_id: ID of the document library
+            folder_path: Path to the folder (e.g. "General" or "Documents/Folder1")
+            file_name: Name of the file to create
+            file_content: Content of the file as bytes
+            content_type: MIME type of the file
+            
+        Returns:
+            Created document information
+        """
+        # Prepare the endpoint
+        if folder_path and folder_path != '/':
+            # Upload to a subfolder
+            endpoint = f"sites/{site_id}/drives/{drive_id}/root:/{folder_path}/{file_name}:/content"
+        else:
+            # Upload to root folder
+            endpoint = f"sites/{site_id}/drives/{drive_id}/root:/{file_name}:/content"
+        
+        logger.info(f"Uploading document {file_name} to {folder_path if folder_path else 'root'}")
+        
+        # For small files, use simple upload
+        if len(file_content) < 4 * 1024 * 1024:  # 4 MB
+            return await self.upload_file(endpoint, file_content, content_type)
+        else:
+            # For larger files, we need to use upload session (not implemented for simplicity)
+            # This would involve creating an upload session and uploading the file in chunks
+            logger.warning("Large file upload (>4MB) should use upload session.")
+            logger.warning("Implementing simple upload instead, which might fail for large files.")
+            return await self.upload_file(endpoint, file_content, content_type)
     
     async def create_folder_in_library(self, site_id: str, drive_id: str, 
                                     folder_path: str) -> Dict[str, Any]:

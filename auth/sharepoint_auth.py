@@ -66,6 +66,131 @@ class SharePointContext:
             logger.error(f"Error during connection test: {e}")
             return False
 
+    def test_write_permissions(self) -> bool:
+        """Test if the current token has write permissions."""
+        try:
+            logger.debug("Testing write permissions...")
+            
+            # Extract site domain and name from site URL
+            site_parts = SHAREPOINT_CONFIG["site_url"].replace("https://", "").split("/")
+            domain = site_parts[0]
+            site_name = site_parts[2] if len(site_parts) > 2 else "root"
+            
+            # First get site ID
+            site_url = f"{self.graph_url}/sites/{domain}:/sites/{site_name}"
+            response = requests.get(site_url, headers=self.headers)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get site ID: {response.status_code} - {response.text}")
+                return False
+            
+            site_id = response.json().get("id")
+            if not site_id:
+                logger.error("Site ID not found in response")
+                return False
+            
+            # Try to create a simple folder in a document library
+            # First, get document libraries
+            drives_url = f"{self.graph_url}/sites/{site_id}/drives"
+            response = requests.get(drives_url, headers=self.headers)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to get document libraries: {response.status_code} - {response.text}")
+                return False
+                
+            drives = response.json().get("value", [])
+            if not drives:
+                logger.error("No document libraries found")
+                return False
+                
+            # Try to create a test folder in the first document library
+            drive_id = drives[0].get("id")
+            folder_url = f"{self.graph_url}/sites/{site_id}/drives/{drive_id}/root/children"
+            
+            test_folder_name = f"test-folder-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            folder_data = {
+                "name": test_folder_name,
+                "folder": {},
+                "@microsoft.graph.conflictBehavior": "rename"
+            }
+            
+            response = requests.post(folder_url, headers=self.headers, json=folder_data)
+            
+            if response.status_code not in (200, 201):
+                logger.error(f"Failed to create test folder: {response.status_code} - {response.text}")
+                if response.status_code == 401 or response.status_code == 403:
+                    logger.error("Insufficient permissions for write operations")
+                return False
+                
+            logger.info(f"Write permission test successful: {response.status_code}")
+            
+            # Try to delete the test folder
+            folder_id = response.json().get("id")
+            delete_url = f"{self.graph_url}/sites/{site_id}/drives/{drive_id}/items/{folder_id}"
+            
+            delete_response = requests.delete(delete_url, headers=self.headers)
+            if delete_response.status_code not in (200, 204):
+                logger.warning(f"Could not delete test folder: {delete_response.status_code}")
+            else:
+                logger.info("Test folder deleted successfully")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during write permission test: {e}")
+            return False
+
+    def decode_and_log_token_permissions(self) -> None:
+        """Decode token and log the permissions it contains."""
+        try:
+            import base64
+            
+            # Split token into parts
+            token_parts = self.access_token.split('.')
+            if len(token_parts) < 2:
+                logger.error("Invalid token format")
+                return
+            
+            # Decode the payload (second part)
+            payload = token_parts[1]
+            # Add padding if necessary
+            payload += '=' * ((4 - len(payload) % 4) % 4)
+            decoded = base64.b64decode(payload)
+            claims = json.loads(decoded)
+            
+            # Log token information
+            logger.info("Token information:")
+            logger.info(f"Token expires: {claims.get('exp', 'unknown')}")
+            logger.info(f"Token issued: {claims.get('iat', 'unknown')}")
+            logger.info(f"Token issuer: {claims.get('iss', 'unknown')}")
+            
+            # Check for roles (app permissions) or scp (delegated permissions)
+            roles = claims.get('roles', [])
+            scp = claims.get('scp', '')
+            
+            if roles:
+                logger.info("Application permissions (roles):")
+                for role in roles:
+                    logger.info(f"  - {role}")
+                
+                # Check for write permissions
+                write_permissions = [p for p in roles if 'ReadWrite' in p or 'Manage' in p]
+                if write_permissions:
+                    logger.info("Write permissions found:")
+                    for p in write_permissions:
+                        logger.info(f"  - {p}")
+                else:
+                    logger.warning("No write permissions found in token")
+            
+            if scp:
+                logger.info(f"Delegated permissions (scp): {scp}")
+                
+            if not roles and not scp:
+                logger.error("No roles or scp claims found in token - operations will likely fail")
+                
+        except Exception as e:
+            logger.error(f"Error decoding token: {e}")
+
 
 def validate_config() -> None:
     """Validate SharePoint configuration."""
@@ -94,13 +219,19 @@ async def get_auth_context() -> SharePointContext:
     # Set up token cache
     cache = msal.SerializableTokenCache()
     
-    # 既存のキャッシュファイルは削除して強制的に新しいトークンを取得
+    # Load existing cache file if it exists
     if os.path.exists(TOKEN_CACHE_FILE):
         try:
-            os.remove(TOKEN_CACHE_FILE)
-            logger.info("Removed existing token cache to force new token acquisition")
+            with open(TOKEN_CACHE_FILE, 'r') as cache_file:
+                cache.deserialize(cache_file.read())
+            logger.info("Loaded token cache from file")
+            
+            # Check if cache has a valid token
+            accounts = cache.find(msal.TokenCache.CredentialType.REFRESH_TOKEN)
+            if accounts:
+                logger.info("Found refresh token in cache, attempting to use it")
         except Exception as e:
-            logger.warning(f"Error removing token cache: {e}")
+            logger.warning(f"Error loading token cache: {e}")
     
     # Create MSAL client application
     app = msal.ConfidentialClientApplication(
@@ -110,9 +241,17 @@ async def get_auth_context() -> SharePointContext:
         token_cache=cache
     )
     
-    # Get new token
-    logger.info("Acquiring new token with client credentials flow")
-    result = app.acquire_token_for_client(scopes=SHAREPOINT_CONFIG["scope"])
+    # First try to get token silently from cache
+    result = None
+    accounts = app.get_accounts()
+    if accounts:
+        logger.info("Account found in cache, attempting silent token acquisition")
+        result = app.acquire_token_silent(SHAREPOINT_CONFIG["scope"], account=accounts[0])
+    
+    # If silent token acquisition fails, get new token
+    if not result:
+        logger.info("No token in cache or silent acquisition failed, acquiring new token")
+        result = app.acquire_token_for_client(scopes=SHAREPOINT_CONFIG["scope"])
     
     # Raise error if token acquisition fails
     if "access_token" not in result:
@@ -133,44 +272,9 @@ async def get_auth_context() -> SharePointContext:
         
         raise Exception(f"Authentication failed: {error_code} - {error_description}")
     
-    # ログに表示するトークンの一部（セキュリティのため）
+    # Log a preview of the token (for security, only partial token is shown)
     token_preview = f"{result['access_token'][:10]}...{result['access_token'][-10:]}"
     logger.info(f"Token acquired successfully: {token_preview}")
-    
-    # テスト目的で、トークンに必要なクレームが含まれているか確認
-    try:
-        import base64
-        import json
-        
-        # トークンのペイロード部分（2番目の部分）をデコード
-        token_parts = result['access_token'].split('.')
-        if len(token_parts) >= 2:
-            # パディングを追加
-            payload = token_parts[1]
-            payload += '=' * ((4 - len(payload) % 4) % 4)
-            
-            # Base64でデコード
-            decoded = base64.b64decode(payload)
-            claims = json.loads(decoded)
-            
-            # ロールを確認
-            roles = claims.get('roles', [])
-            if roles:
-                logger.info(f"Token contains roles: {roles}")
-            else:
-                logger.warning("Token does not contain roles claim")
-                
-            # スコープを確認
-            scp = claims.get('scp', '')
-            if scp:
-                logger.info(f"Token contains scp claim: {scp}")
-            else:
-                logger.info("Token does not contain scp claim (expected for app-only tokens)")
-                
-            if not roles and not scp:
-                logger.error("Token does not contain either roles or scp claim - this will cause errors!")
-    except Exception as e:
-        logger.warning(f"Error analyzing token claims: {e}")
     
     # Save token cache
     try:
@@ -190,10 +294,20 @@ async def get_auth_context() -> SharePointContext:
         token_expiry=expiry
     )
     
+    # Decode and log token permissions
+    context.decode_and_log_token_permissions()
+    
     # Test connection immediately
     logger.info("Testing connection with acquired token...")
     if not context.test_connection():
         logger.warning("Connection test failed, but continuing anyway...")
+    
+    # Test write permissions
+    logger.info("Testing write permissions...")
+    if not context.test_write_permissions():
+        logger.warning("Write permission test failed. Some operations may not work.")
+    else:
+        logger.info("Write permission test successful. Token has write permissions.")
     
     return context
 

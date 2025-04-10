@@ -102,13 +102,13 @@ cp .env.example .env
 ### Run in Development Mode
 
 ```bash
-mcp dev src/server.py
+mcp dev server.py
 ```
 
 ### Install in Claude Desktop
 
 ```bash
-mcp install src/server.py --name "SharePoint Assistant"
+mcp install server.py --name "SharePoint Assistant"
 ```
 
 ### Run Directly

@@ -66,7 +66,7 @@ def run_auth_diagnostic():
         )
         
         # Try client credential flow
-        print("Attempting client credential flow...")
+        print("Attempting client credential flow with Microsoft Entra ID...")
         scope = ["https://graph.microsoft.com/.default"]
         result = app.acquire_token_for_client(scopes=scope)
         
@@ -78,7 +78,7 @@ def run_auth_diagnostic():
             # Detailed explanations for common errors
             if "AADSTS700016" in str(error_description):
                 print("   Application not found or is disabled for the tenant")
-                print("   Please check your application registration in Azure AD")
+                print("   Please check your application registration in Microsoft Entra ID")
             elif "AADSTS7000215" in str(error_description):
                 print("   Invalid client secret")
                 print("   Check if your client secret is correct and not expired")
@@ -229,7 +229,7 @@ def run_auth_diagnostic():
                     else:
                         print("\n✅ All required permissions are present in the token")
                 else:
-                    print("❌ No roles found in token - check application permissions in Azure AD")
+                    print("❌ No roles found in token - check application permissions in Microsoft Entra ID")
             else:
                 print("⚠️ Could not decode token to check permissions")
         except Exception as e:
