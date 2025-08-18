@@ -454,6 +454,103 @@ def register_site_tools(mcp: FastMCP):
             return f"Error creating news post: {str(e)}"
     
     @mcp.tool()
+    async def list_document_contents(ctx: Context, site_id: str, drive_id: str, folder_id: str = "root") -> str:
+        """List contents of a document library folder.
+        
+        Args:
+            site_id: ID of the site
+            drive_id: ID of the document library
+            folder_id: ID of the folder (default is "root" for the root folder)
+            
+        Returns:
+            List of items in the folder
+        """
+        logger.info(f"Tool called: list_document_contents for folder: {folder_id}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # List folder contents
+            result = await graph_client.list_document_contents(site_id, drive_id, folder_id)
+            
+            # Format the results for better readability
+            formatted_items = []
+            for item in result.get("value", []):
+                item_type = "folder" if "folder" in item else "file"
+                formatted_item = {
+                    "name": item.get("name", ""),
+                    "id": item.get("id", ""),
+                    "type": item_type,
+                    "web_url": item.get("webUrl", ""),
+                    "last_modified": item.get("lastModifiedDateTime", "")
+                }
+                
+                # Add file-specific properties
+                if item_type == "file":
+                    formatted_item["size"] = item.get("size", 0)
+                    if "file" in item:
+                        formatted_item["mime_type"] = item["file"].get("mimeType", "")
+                
+                formatted_items.append(formatted_item)
+            
+            logger.info(f"Successfully listed {len(formatted_items)} items in folder {folder_id}")
+            return json.dumps(formatted_items, indent=2)
+        except Exception as e:
+            logger.error(f"Error in list_document_contents: {str(e)}")
+            return f"Error listing document contents: {str(e)}"
+    
+    @mcp.tool()
+    async def search_sharepoint(ctx: Context, query: str) -> str:
+        """Search content in the SharePoint site.
+        
+        Args:
+            query: Search query string
+        """
+        logger.info(f"Tool called: search_sharepoint with query: {query}")
+        
+        try:
+            # Get authentication context and refresh if needed
+            sp_ctx = ctx.request_context.lifespan_context
+            await refresh_token_if_needed(sp_ctx)
+            
+            # Get site info
+            site_info = await get_site_info(ctx)
+            site_id = json.loads(site_info).get("id", "")
+            
+            # Create Graph client
+            graph_client = GraphClient(sp_ctx)
+            
+            # Search SharePoint
+            result = await graph_client.search_sharepoint(site_id, query)
+            
+            # Format the results for better readability
+            formatted_results = []
+            hits = result.get("value", [])
+            if hits and len(hits) > 0 and "hitsContainers" in hits[0]:
+                for container in hits[0]["hitsContainers"]:
+                    for hit in container.get("hits", []):
+                        resource = hit.get("resource", {})
+                        formatted_hit = {
+                            "name": resource.get("name", ""),
+                            "web_url": resource.get("webUrl", ""),
+                            "last_modified": resource.get("lastModifiedDateTime", ""),
+                            "size": resource.get("size", 0),
+                            "score": hit.get("rank", 0)
+                        }
+                        formatted_results.append(formatted_hit)
+            
+            logger.info(f"Successfully found {len(formatted_results)} items matching query: {query}")
+            return json.dumps(formatted_results, indent=2)
+        except Exception as e:
+            logger.error(f"Error searching SharePoint: {str(e)}")
+            return f"Error searching SharePoint: {str(e)}"
+    
+    @mcp.tool()
     async def get_document_content(ctx: Context, site_id: str, drive_id: str, 
                                 item_id: str, filename: str) -> str:
         """Get and process content from a SharePoint document.

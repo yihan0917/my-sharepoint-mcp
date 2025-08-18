@@ -570,6 +570,54 @@ class GraphClient:
         logger.info(f"Publishing page {page_id}")
         return await self.post(endpoint, {})
     
+    async def list_document_contents(self, site_id: str, drive_id: str, folder_id: str = "root") -> Dict[str, Any]:
+        """List contents of a document library folder.
+        
+        Args:
+            site_id: ID of the site
+            drive_id: ID of the document library
+            folder_id: ID of the folder (default is "root" for the root folder)
+        
+        Returns:
+            List of items in the folder
+        """
+        endpoint = f"sites/{site_id}/drives/{drive_id}/items/{folder_id}/children"
+        logger.info(f"Listing contents of folder {folder_id} in drive {drive_id}")
+        return await self.get(endpoint)
+    
+    async def search_sharepoint(self, site_id: str, query: str) -> Dict[str, Any]:
+        """Search for content in SharePoint.
+        
+        Args:
+            site_id: ID of the site
+            query: Search query string
+        
+        Returns:
+            Search results
+        """
+        # Use the Microsoft Search API
+        endpoint = "search/query"
+        data = {
+            "requests": [
+                {
+                    "entityTypes": ["driveItem"],
+                    "query": {
+                        "queryString": query
+                    },
+                    "from": 0,
+                    "size": 25,
+                    "fields": ["name", "webUrl", "lastModifiedDateTime", "size", "file"]
+                }
+            ]
+        }
+        
+        # If site_id is provided, scope the search to that site
+        if site_id:
+            data["requests"][0]["contentSources"] = [f"/sites/{site_id}"]
+        
+        logger.info(f"Searching SharePoint for: {query}")
+        return await self.post(endpoint, data)
+    
     async def get_document_content(self, site_id: str, drive_id: str, item_id: str) -> bytes:
         """Get content of a document.
         
