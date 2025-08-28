@@ -505,52 +505,6 @@ def register_site_tools(mcp: FastMCP):
             return f"Error listing document contents: {str(e)}"
     
     @mcp.tool()
-    async def search_sharepoint(ctx: Context, query: str) -> str:
-        """Search content in the SharePoint site.
-        
-        Args:
-            query: Search query string
-        """
-        logger.info(f"Tool called: search_sharepoint with query: {query}")
-        
-        try:
-            # Get authentication context and refresh if needed
-            sp_ctx = ctx.request_context.lifespan_context
-            await refresh_token_if_needed(sp_ctx)
-            
-            # Get site info
-            site_info = await get_site_info(ctx)
-            site_id = json.loads(site_info).get("id", "")
-            
-            # Create Graph client
-            graph_client = GraphClient(sp_ctx)
-            
-            # Search SharePoint
-            result = await graph_client.search_sharepoint(site_id, query)
-            
-            # Format the results for better readability
-            formatted_results = []
-            hits = result.get("value", [])
-            if hits and len(hits) > 0 and "hitsContainers" in hits[0]:
-                for container in hits[0]["hitsContainers"]:
-                    for hit in container.get("hits", []):
-                        resource = hit.get("resource", {})
-                        formatted_hit = {
-                            "name": resource.get("name", ""),
-                            "web_url": resource.get("webUrl", ""),
-                            "last_modified": resource.get("lastModifiedDateTime", ""),
-                            "size": resource.get("size", 0),
-                            "score": hit.get("rank", 0)
-                        }
-                        formatted_results.append(formatted_hit)
-            
-            logger.info(f"Successfully found {len(formatted_results)} items matching query: {query}")
-            return json.dumps(formatted_results, indent=2)
-        except Exception as e:
-            logger.error(f"Error searching SharePoint: {str(e)}")
-            return f"Error searching SharePoint: {str(e)}"
-    
-    @mcp.tool()
     async def get_document_content(ctx: Context, site_id: str, drive_id: str, 
                                 item_id: str, filename: str) -> str:
         """Get and process content from a SharePoint document.
