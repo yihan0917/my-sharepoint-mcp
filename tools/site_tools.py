@@ -536,3 +536,169 @@ def register_site_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error in get_document_content: {str(e)}")
             return f"Error getting document content: {str(e)}"
+    
+    @mcp.tool()
+    async def analyze_excel_with_prompt(ctx: Context, prompt: str) -> str:
+        """Analyze Excel files from SharePoint using natural language prompts.
+        
+        Args:
+            prompt: Natural language description of what to analyze 
+                   (e.g., "analyze the 2023 recruiting dataset excel file")
+        
+        Returns:
+            Complete analysis results with function call tracking
+        """
+        logger.info(f"Tool called: analyze_excel_with_prompt with prompt: {prompt}")
+        
+        try:
+            import subprocess
+            import asyncio
+            import os
+            import sys
+            from datetime import datetime
+            
+            # Get the project root directory
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            analyzer_script = os.path.join(project_root, "general_excel_analyzer.py")
+            
+            # Determine analysis type based on prompt
+            analysis_type = "general"
+            prompt_lower = prompt.lower()
+            
+            if any(word in prompt_lower for word in ["recruiting", "recruit", "hiring", "hr"]):
+                analysis_type = "recruiting"
+            elif any(word in prompt_lower for word in ["financial", "finance", "budget", "cost"]):
+                analysis_type = "financial"
+            
+            # Determine filename pattern from prompt
+            filename_pattern = "2023 recruiting dataset"  # Default
+            
+            if "2023" in prompt_lower and ("recruiting" in prompt_lower or "dataset" in prompt_lower):
+                filename_pattern = "2023 recruiting dataset"
+            elif "ngpi" in prompt_lower or "metrics" in prompt_lower:
+                filename_pattern = "ngpi metrics"
+            else:
+                # Extract potential filename from prompt
+                words = prompt_lower.split()
+                filename_pattern = " ".join([word for word in words if word not in ["analyze", "the", "excel", "file", "from", "sharepoint"]])
+            
+            logger.info(f"Using filename pattern: {filename_pattern}")
+            logger.info(f"Using analysis type: {analysis_type}")
+            
+            # Create a temporary Python script to run the analyzer
+            temp_script_content = f'''
+import sys
+import os
+import asyncio
+
+# Add project root to path
+sys.path.append(r"{project_root}")
+
+from general_excel_analyzer import analyze_excel_file
+
+async def main():
+    try:
+        result = await analyze_excel_file("{filename_pattern}", "{analysis_type}")
+        return result
+    except Exception as e:
+        print(f"Error in analysis: {{str(e)}}")
+        return None
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+            
+            # Write temporary script
+            temp_script_path = os.path.join(project_root, "temp_analyzer.py")
+            with open(temp_script_path, 'w') as f:
+                f.write(temp_script_content)
+            
+            try:
+                # Run the analyzer script
+                logger.info("Running Excel analyzer script...")
+                
+                # Capture output from the script
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, temp_script_path,
+                    cwd=project_root,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                # Clean up temporary script
+                try:
+                    os.remove(temp_script_path)
+                except:
+                    pass
+                
+                if process.returncode == 0:
+                    # Parse the output
+                    output_text = stdout.decode('utf-8')
+                    
+                    # Extract key information from the output
+                    analysis_results = {
+                        "analysis_type": analysis_type,
+                        "filename_pattern": filename_pattern,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "success",
+                        "output": output_text,
+                        "function_calls_tracked": True
+                    }
+                    
+                    # Try to extract structured data from output
+                    lines = output_text.split('\n')
+                    metrics = {}
+                    current_section = None
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if "RECRUITING METRICS" in line:
+                            current_section = "recruiting_metrics"
+                            metrics[current_section] = {}
+                        elif "DATASET OVERVIEW" in line:
+                            current_section = "dataset_overview"
+                            metrics[current_section] = {}
+                        elif "TOP PERFORMERS" in line:
+                            current_section = "top_performers"
+                            metrics[current_section] = {}
+                        elif ":" in line and current_section:
+                            parts = line.split(":", 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip()
+                                value = parts[1].strip()
+                                metrics[current_section][key] = value
+                    
+                    if metrics:
+                        analysis_results["structured_metrics"] = metrics
+                    
+                    logger.info("Excel analysis completed successfully")
+                    return json.dumps(analysis_results, indent=2)
+                    
+                else:
+                    error_text = stderr.decode('utf-8')
+                    logger.error(f"Excel analyzer script failed: {error_text}")
+                    
+                    return json.dumps({
+                        "error": f"Excel analysis failed: {error_text}",
+                        "prompt": prompt,
+                        "filename_pattern": filename_pattern,
+                        "analysis_type": analysis_type,
+                        "status": "failed"
+                    }, indent=2)
+                    
+            except Exception as e:
+                # Clean up temporary script
+                try:
+                    os.remove(temp_script_path)
+                except:
+                    pass
+                raise e
+                
+        except Exception as e:
+            logger.error(f"Error in analyze_excel_with_prompt: {str(e)}")
+            return json.dumps({
+                "error": f"Error analyzing Excel file: {str(e)}",
+                "prompt": prompt
+            }, indent=2)

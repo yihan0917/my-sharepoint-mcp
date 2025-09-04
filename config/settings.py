@@ -18,6 +18,9 @@ SHAREPOINT_CONFIG = {
     "site_url": os.getenv("SITE_URL", ""),
     "username": os.getenv("USERNAME", ""),
     "password": os.getenv("PASSWORD", ""),
+    # Optional: For fallback scenarios when dynamic discovery fails
+    "site_id": os.getenv("SITE_ID", ""),
+    "drive_id": os.getenv("DRIVE_ID", ""),
     "scope": [
         "https://graph.microsoft.com/.default",
         # The application must have these permissions:
