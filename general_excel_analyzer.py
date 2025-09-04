@@ -145,16 +145,28 @@ def _matches_pattern(filename, pattern):
     filename_lower = filename.lower()
     pattern_lower = pattern.lower()
     
-    # Split pattern into words
-    pattern_words = [word.strip() for word in pattern_lower.split() if len(word.strip()) > 2]
+    # Remove quotes and extra spaces from pattern
+    pattern_clean = pattern_lower.strip().strip("'\"").strip()
     
-    # Check for exact substring match
-    if pattern_lower in filename_lower:
+    # Check for exact substring match first
+    if pattern_clean in filename_lower:
         return True
     
-    # Check for word matches (at least 60% of words should match)
-    matches = sum(1 for word in pattern_words if word in filename_lower)
-    return matches >= max(1, len(pattern_words) * 0.6)
+    # Extract key terms from pattern (remove common words)
+    import re
+    # Remove file extensions and common words
+    pattern_terms = re.findall(r'\b\w{3,}\b', pattern_clean)
+    pattern_terms = [term for term in pattern_terms if term not in ['xlsx', 'file', 'data', 'folder']]
+    
+    # Check if most key terms are present
+    if len(pattern_terms) == 0:
+        return False
+        
+    matches = sum(1 for term in pattern_terms if term in filename_lower)
+    match_ratio = matches / len(pattern_terms)
+    
+    # Lower threshold for better matching
+    return match_ratio >= 0.4
 
 def _find_best_match(excel_files, pattern):
     """Find the best matching file from the list"""
