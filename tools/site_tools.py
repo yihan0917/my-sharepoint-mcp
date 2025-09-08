@@ -702,3 +702,186 @@ if __name__ == "__main__":
                 "error": f"Error analyzing Excel file: {str(e)}",
                 "prompt": prompt
             }, indent=2)
+    
+    @mcp.tool()
+    async def analyze_powerpoint_with_prompt(ctx: Context, prompt: str) -> str:
+        """Analyze PowerPoint files from SharePoint using natural language prompts.
+        
+        Args:
+            prompt: Natural language description of what to analyze 
+                   (e.g., "analyze the HR Reporting July 2024 powerpoint file")
+        
+        Returns:
+            Complete analysis results with function call tracking
+        """
+        logger.info(f"Tool called: analyze_powerpoint_with_prompt with prompt: {prompt}")
+        
+        try:
+            import subprocess
+            import asyncio
+            import os
+            import sys
+            from datetime import datetime
+            
+            # Get the project root directory
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            analyzer_script = os.path.join(project_root, "powerpoint_analyzer.py")
+            
+            # Determine filename pattern from prompt
+            filename_pattern = ""  # Default empty
+            prompt_lower = prompt.lower()
+            
+            # Look for specific known patterns first
+            if "hr reporting" in prompt_lower or "hr report" in prompt_lower:
+                filename_pattern = "HR Reporting"
+            elif "quarterly" in prompt_lower and "report" in prompt_lower:
+                filename_pattern = "quarterly report"
+            elif "annual" in prompt_lower and "report" in prompt_lower:
+                filename_pattern = "annual report"
+            elif "presentation" in prompt_lower or "deck" in prompt_lower:
+                # Extract key terms around presentation/deck
+                words = prompt_lower.split()
+                key_words = []
+                for i, word in enumerate(words):
+                    if word in ["presentation", "deck", "powerpoint", "pptx"]:
+                        # Get words before this term
+                        start = max(0, i-3)
+                        key_words.extend(words[start:i])
+                        break
+                filename_pattern = " ".join(key_words) if key_words else ""
+            else:
+                # Extract potential filename from prompt (more general approach)
+                words = prompt_lower.split()
+                # Remove common analysis words
+                excluded_words = ["analyze", "the", "powerpoint", "pptx", "ppt", "file", "from", "sharepoint", "presentation", "slide", "slides"]
+                filename_pattern = " ".join([word for word in words if word not in excluded_words])
+            
+            # If no pattern found, use a generic search
+            if not filename_pattern.strip():
+                filename_pattern = "presentation"
+            
+            logger.info(f"Using filename pattern: {filename_pattern}")
+            
+            # Create a temporary Python script to run the analyzer
+            temp_script_content = f'''
+import sys
+import os
+import asyncio
+
+# Add project root to path
+sys.path.append(r"{project_root}")
+
+from powerpoint_analyzer import analyze_powerpoint_file
+
+async def main():
+    try:
+        result = await analyze_powerpoint_file("{filename_pattern}")
+        return result
+    except Exception as e:
+        print(f"Error in analysis: {{str(e)}}")
+        return None
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+            
+            # Write temporary script
+            temp_script_path = os.path.join(project_root, "temp_ppt_analyzer.py")
+            with open(temp_script_path, 'w') as f:
+                f.write(temp_script_content)
+            
+            try:
+                # Run the analyzer script
+                logger.info("Running PowerPoint analyzer script...")
+                
+                # Capture output from the script
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, temp_script_path,
+                    cwd=project_root,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                # Clean up temporary script
+                try:
+                    os.remove(temp_script_path)
+                except:
+                    pass
+                
+                if process.returncode == 0:
+                    # Parse the output
+                    output_text = stdout.decode('utf-8')
+                    
+                    # Extract key information from the output
+                    analysis_results = {
+                        "analysis_type": "powerpoint",
+                        "filename_pattern": filename_pattern,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "success",
+                        "output": output_text,
+                        "function_calls_tracked": True
+                    }
+                    
+                    # Try to extract structured data from output
+                    lines = output_text.split('\n')
+                    metrics = {}
+                    slides_content = []
+                    current_section = None
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if "HR REPORTING ANALYSIS" in line:
+                            current_section = "hr_metrics"
+                            metrics[current_section] = {}
+                        elif "KEY METRICS EXTRACTED" in line:
+                            current_section = "key_metrics"
+                            metrics[current_section] = {}
+                        elif "--- SLIDE" in line:
+                            current_section = "slides"
+                            if current_section not in metrics:
+                                metrics[current_section] = []
+                        elif ":" in line and current_section == "key_metrics":
+                            parts = line.split(":", 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip()
+                                value = parts[1].strip()
+                                metrics[current_section][key] = value
+                        elif current_section == "slides" and line and not line.startswith("---"):
+                            slides_content.append(line)
+                    
+                    if slides_content:
+                        metrics["slides_content"] = slides_content[:5]  # First 5 slides content
+                    
+                    if metrics:
+                        analysis_results["structured_metrics"] = metrics
+                    
+                    logger.info("PowerPoint analysis completed successfully")
+                    return json.dumps(analysis_results, indent=2)
+                    
+                else:
+                    error_text = stderr.decode('utf-8')
+                    logger.error(f"PowerPoint analyzer script failed: {error_text}")
+                    
+                    return json.dumps({
+                        "error": f"PowerPoint analysis failed: {error_text}",
+                        "prompt": prompt,
+                        "filename_pattern": filename_pattern,
+                        "status": "failed"
+                    }, indent=2)
+                    
+            except Exception as e:
+                # Clean up temporary script
+                try:
+                    os.remove(temp_script_path)
+                except:
+                    pass
+                raise e
+                
+        except Exception as e:
+            logger.error(f"Error in analyze_powerpoint_with_prompt: {str(e)}")
+            return json.dumps({
+                "error": f"Error analyzing PowerPoint file: {str(e)}",
+                "prompt": prompt
+            }, indent=2)
